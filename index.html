@@ -181,9 +181,11 @@
   }
   .toast.err { background: var(--bad); color: #fff; }
   .loading { padding: 60px 0; text-align: center; color: var(--muted); }
+  .demo-banner { background: #f2c45a; color: #1c1c1e; text-align: center; font-size: .85rem; font-weight: 600; padding: 6px 16px; }
 </style>
 </head>
 <body>
+<div class="demo-banner" id="demo-banner" hidden>Ukázkový režim – smyšlená data, změny se neukládají.</div>
 <main>
   <header class="top">
     <div>
@@ -210,6 +212,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 <script>
   // app.js vždy čerstvý – GitHub Pages ho jinak nechá v mezipaměti prohlížeče až 10 minut
+  if (new URLSearchParams(location.search).has("demo")) document.write('<script src="demo-data.js?t=' + Date.now() + '"><\/script>');
   document.write('<script src="app.js?t=' + Date.now() + '"><\/script>');
 </script>
 </body>

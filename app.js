@@ -19,7 +19,8 @@
   const VYCHOZI_KURZY = { eur: 24.25, gbp: 27.5, php: 0.35 };
   const MESICE_CS = ["leden", "únor", "březen", "duben", "květen", "červen", "červenec", "srpen", "září", "říjen", "listopad", "prosinec"];
 
-  let db = null;          // supabase klient
+  const DEMO = new URLSearchParams(location.search).has("demo");
+  let db = null;          // supabase klient (v ukázce paměťová náhrada)
   let uzivatel = null;
   const D = { polozky: [], stavy: new Map(), mesice: new Map(), historie: new Map(), cfRadky: [], cf: new Map() };
 
@@ -101,6 +102,40 @@
       const { error } = await db.from(tab).upsert(rows.slice(i, i + 500), { onConflict });
       if (error) throw error;
     }
+  }
+
+  // Ukázkový režim: stejné rozhraní jako supabase klient (jen to, co aplikace používá), data v paměti.
+  function pametovyKlient(zdroj) {
+    const T = {};
+    for (const [tab, rows] of Object.entries(zdroj)) T[tab] = rows.map((r) => ({ ...r }));
+    const ok = (data) => Promise.resolve({ data, error: null });
+    return {
+      from(tab) {
+        T[tab] = T[tab] || [];
+        return {
+          select: () => ({ range: (od, do_) => ok(T[tab].slice(od, do_ + 1).map((r) => ({ ...r }))) }),
+          upsert(rows, { onConflict }) {
+            const klice = onConflict.split(",");
+            for (const r of rows) {
+              const i = T[tab].findIndex((x) => klice.every((k) => x[k] === r[k]));
+              if (i >= 0) T[tab][i] = { ...T[tab][i], ...r }; else T[tab].push({ ...r });
+            }
+            return ok(null);
+          },
+          delete() {
+            const podm = [];
+            const q = {
+              eq(k, v) { podm.push([k, v]); return q; },
+              then(res, rej) {
+                T[tab] = T[tab].filter((x) => !podm.every(([k, v]) => String(x[k]) === String(v)));
+                return ok(null).then(res, rej);
+              },
+            };
+            return q;
+          },
+        };
+      },
+    };
   }
 
   // ---------- výpočty ----------
@@ -374,7 +409,7 @@
         <div class="grow"></div>
       </div>
       <p class="small muted" id="kZdroj" style="margin-top:-6px">Kurzy: ${esc(zdrojKurzu)}</p>
-      ${pol.some((p) => p.info?.pricist_cf) ? `<div class="note">RD Cvrčovice: hodnota se předvyplní jako minulý stav + platby stavby za tento měsíc z cash flow (řádek „Dům Cvrčovice“). Zkontroluj, že v cash flow je skutečná částka, ne plán.</div>` : ""}
+      ${pol.filter((p) => p.info?.pricist_cf).map((p) => `<div class="note">${esc(p.nazev)}: hodnota se předvyplní jako minulý stav + platby stavby za tento měsíc z cash flow (řádek „${esc(D.cfRadky.find((r) => r.id === p.info.pricist_cf)?.nazev || p.info.pricist_cf)}“). Zkontroluj, že v cash flow je skutečná částka, ne plán.</div>`).join("")}
       <div class="card scroll"><table id="uzTab"><thead><tr>
         <th>Položka</th><th>Měna</th><th class="r">${mKratce(pm)}</th><th class="r">${mKratce(m)}</th><th class="r">Změna (Kč)</th>
       </tr></thead><tbody></tbody><tfoot></tfoot></table></div>
@@ -981,6 +1016,17 @@
   window.addEventListener("hashchange", render);
 
   async function start() {
+    if (DEMO) {
+      document.documentElement.classList.remove("auth-ceka");
+      $("#demo-banner").hidden = false;
+      document.title = "Ukázka – Rodinné finance";
+      uzivatel = { jmeno: "Ukázka" };
+      db = pametovyKlient(window.DEMO_DATA);
+      $("#kdo").textContent = "ukázková data";
+      await nacti();
+      render();
+      return;
+    }
     const s = await window.RodinaAuth.vyzadujPrihlaseni();
     if (!s) return;
     uzivatel = s; db = window.RodinaAuth.client;

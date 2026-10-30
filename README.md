@@ -5,6 +5,7 @@ Webová náhrada Excelu „aktiva a pasiva“: přehled majetku, měsíční uz�
 a přístup mají jen přihlášení členové rodiny (společné přihlášení z Rozcestníku).
 
 Adresa: <https://jakubpechoucek-glitch.github.io/finance/>
+Ukázka se smyšlenými daty (bez přihlášení): <https://jakubpechoucek-glitch.github.io/finance/?demo>
 
 ## Co aplikace umí
 
