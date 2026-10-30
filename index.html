@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="cs" class="auth-ceka">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rodinné finance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f2ee;
+    --text: #1c1c1e;
+    --muted: #66656b;
+    --line: #dedad2;
+    --tile: #ffffff;
+    --accent: #1f5f4a;
+    --accent-ink: #ffffff;
+    --soft: #ebe7df;
+    --good: #1a7f37;
+    --bad: #b3261e;
+    --warn-bg: #fff4d6;
+    --warn-ink: #6b4e00;
+    /* kategorie (grafy) */
+    --c-nemovitosti: #2a78d6;
+    --c-hotovost: #eb6834;
+    --c-investice: #1baf7a;
+    --c-penzijka: #eda100;
+    --error: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121214; --text: #ececef; --muted: #9b9aa2; --line: #2b2b30; --tile: #1c1c20;
+      --accent: #4cc79a; --accent-ink: #0d1f18; --soft: #24242a;
+      --good: #4cc79a; --bad: #ff8a80; --warn-bg: #3a2f10; --warn-ink: #ffd98a;
+      --c-nemovitosti: #3987e5; --c-hotovost: #d95926; --c-investice: #199e70; --c-penzijka: #c98500;
+      --error: #ff8a80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121214; --text: #ececef; --muted: #9b9aa2; --line: #2b2b30; --tile: #1c1c20;
+    --accent: #4cc79a; --accent-ink: #0d1f18; --soft: #24242a;
+    --good: #4cc79a; --bad: #ff8a80; --warn-bg: #3a2f10; --warn-ink: #ffd98a;
+    --c-nemovitosti: #3987e5; --c-hotovost: #d95926; --c-investice: #199e70; --c-penzijka: #c98500;
+    --error: #ff8a80;
+  }
+  html.auth-ceka body { visibility: hidden; }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 1200px; margin: 0 auto; padding: 32px 16px 64px; }
+  header.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  header.top h1 { font: 600 clamp(1.8rem, 4vw, 2.6rem)/1.05 Fraunces, Georgia, serif; letter-spacing: -0.02em; margin: 0; }
+  header.top .kdo { color: var(--muted); font-size: .85rem; }
+  header.top .kdo a, header.top .kdo button { color: inherit; font: inherit; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+
+  nav.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 24px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+  nav.tabs a {
+    padding: 6px 14px; border-radius: 999px; text-decoration: none; color: var(--muted);
+    font-weight: 600; font-size: .9rem;
+  }
+  nav.tabs a:hover { color: var(--text); background: var(--soft); }
+  nav.tabs a.on { background: var(--text); color: var(--bg); }
+
+  h2 { font: 600 1.4rem Fraunces, Georgia, serif; margin: 0 0 12px; }
+  h3 { font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 28px 0 10px; }
+  .muted { color: var(--muted); }
+  .small { font-size: .82rem; }
+  .num { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .86em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .good { color: var(--good); } .bad { color: var(--bad); }
+
+  .card { background: var(--tile); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .kpi .lbl { font-size: .78rem; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .kpi .val { font: 600 1.45rem/1.2 Fraunces, Georgia, serif; margin-top: 4px; white-space: nowrap; }
+  .kpi .sub { font-size: .8rem; margin-top: 2px; }
+  .kpi.hero { grid-column: span 2; }
+  .kpi.hero .val { font-size: clamp(1.6rem, 6vw, 2.1rem); }
+  @media (max-width: 560px) { .kpis { grid-template-columns: 1fr 1fr; } .kpi.hero { grid-column: 1 / -1; } .kpi .val { font-size: 1.2rem; } }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .twocol { grid-template-columns: 1fr; } }
+
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.r, th.r { text-align: right; }
+  tr.sum td { font-weight: 600; border-top: 2px solid var(--text); }
+  tr.grp td { background: var(--soft); font-weight: 600; font-size: .85rem; }
+  tr.off td { opacity: .5; }
+  tbody tr:hover td { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+
+  button, .btn {
+    font: 600 .85rem Inter, sans-serif; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--tile); color: var(--text); text-decoration: none; display: inline-block;
+  }
+  button:hover, .btn:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.mini { padding: 2px 8px; font-size: .75rem; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+  .toolbar .grow { flex: 1; }
+
+  input, select, textarea {
+    font: inherit; padding: 6px 9px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); min-width: 0;
+  }
+  input.amount { width: 150px; text-align: right; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .85rem; }
+  input.amount.filled { background: var(--tile); border-color: var(--accent); }
+  input.amount.err { border-color: var(--bad); }
+  label.f { display: grid; gap: 4px; font-size: .8rem; color: var(--muted); font-weight: 600; }
+  .badge { font-size: .7rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+  .badge.ok { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
+  .badge.src { background: var(--warn-bg); color: var(--warn-ink); }
+  .note { background: var(--warn-bg); color: var(--warn-ink); padding: 10px 14px; border-radius: 12px; font-size: .88rem; margin: 12px 0; }
+
+  /* graf */
+  .chart { position: relative; }
+  .chart { overflow-x: auto; }
+  .chart svg { width: 100%; min-width: 560px; height: auto; display: block; }
+  .chart .axis text { fill: var(--muted); font: 11px Inter, sans-serif; }
+  .chart .grid line { stroke: var(--line); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); margin-bottom: 8px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tip {
+    position: absolute; pointer-events: none; background: var(--tile); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 10px; font-size: .8rem; box-shadow: 0 8px 24px -10px rgba(0,0,0,.35);
+    white-space: nowrap; display: none; z-index: 5;
+  }
+  .tip b { display: block; margin-bottom: 4px; }
+  .tip .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+
+  /* cash flow mřížka */
+  .cf td, .cf th { padding: 4px 8px; }
+  .cf th.lbl, .cf td.lbl { position: sticky; left: 0; background: var(--tile); z-index: 1; min-width: 190px; white-space: nowrap; box-shadow: 1px 0 0 var(--line); }
+  #cfBox { padding: 0; }
+  .cf td.cell { text-align: right; cursor: text; min-width: 96px; }
+  .cf td.cell:hover { outline: 1px dashed var(--muted); outline-offset: -2px; }
+  .cf td.cell.vyr::after { content: "ƒ"; font-size: .65rem; color: var(--muted); margin-left: 3px; vertical-align: super; }
+  .cf .now { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .cf td.cell input { width: 100%; text-align: right; padding: 2px 4px; font-size: .8rem; }
+  .cf tr.calc td { font-weight: 600; }
+
+  dialog { border: 1px solid var(--line); border-radius: 16px; background: var(--tile); color: var(--text); padding: 20px; width: min(560px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0,0,0,.35); }
+  dialog form { display: grid; gap: 10px; }
+  dialog .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 500px) { dialog .grid2 { grid-template-columns: 1fr; } }
+  .kv { display: grid; grid-template-columns: 140px 1fr auto; gap: 6px; align-items: center; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg);
+    padding: 10px 18px; border-radius: 999px; font-weight: 600; font-size: .88rem; z-index: 50; display: none;
+  }
+  .toast.err { background: var(--bad); color: #fff; }
+  .loading { padding: 60px 0; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div>
+      <div class="muted small"><a href="/rozcestnik/" style="color:inherit">← Rozcestník</a></div>
+      <h1>Rodinné finance</h1>
+    </div>
+    <div class="kdo" id="kdo"></div>
+  </header>
+  <nav class="tabs" id="tabs">
+    <a href="#prehled">Přehled</a>
+    <a href="#uzaverka">Uzávěrka měsíce</a>
+    <a href="#polozky">Majetek a smlouvy</a>
+    <a href="#cashflow">Cash flow</a>
+    <a href="#data">Export a import</a>
+  </nav>
+  <div id="app"><div class="loading">Načítám…</div></div>
+</main>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+<dialog id="dlg"></dialog>
+
+<script src="/rozcestnik/vendor/supabase-js-2.45.4.js"></script>
+<script src="/rozcestnik/auth.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<script src="app.js"></script>
+</body>
+</html>
