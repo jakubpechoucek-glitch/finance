@@ -310,13 +310,19 @@
     `;
     grafSloupce($("#g1"), C.mesice);
 
-    // tabulka souhrnu (jako řádky PENZIJKA / AKCIE / NEMOVITOSTI / CASH / CELKEM)
-    const ms = C.mesice.slice(-13);
-    const radek = (nazev, f, tucne) => `<tr class="${tucne ? "sum" : ""}"><td>${nazev}</td>${ms.map((m, i) => {
-      const v = f(C.souhrn.get(m)); const pv = i ? f(C.souhrn.get(ms[i - 1])) : null;
-      return `<td class="r"><span class="num">${fmt0.format(Math.round(v))}</span>${pv ? `<br><span class="small ${znam(v - pv)}">${proc(v / pv - 1)}</span>` : ""}</td>`;
-    }).join("")}</tr>`;
-    $("#tabSouhrn").innerHTML = `<table><thead><tr><th></th>${ms.map((m) => `<th class="r">${mKratce(m)}</th>`).join("")}</tr></thead><tbody>
+    // tabulka souhrnu (jako řádky PENZIJKA / AKCIE / NEMOVITOSTI / CASH / CELKEM) – nejnovější měsíc vlevo
+    const ms = C.mesice.slice(-13).reverse();
+    const radek = (nazev, f, tucne) => {
+      const v0 = f(C.souhrn.get(ms[0])), v1 = ms[1] ? f(C.souhrn.get(ms[1])) : null;
+      const mom = v1 != null ? v0 - v1 : null;
+      return `<tr class="${tucne ? "sum" : ""}"><td>${nazev}</td>
+        <td class="r mom">${mom != null ? `<span class="num ${znam(mom)}">${plus(mom)}</span>${v1 ? `<br><span class="small ${znam(mom)}">${proc(v0 / v1 - 1)}</span>` : ""}` : ""}</td>
+        ${ms.map((m, i) => {
+          const v = f(C.souhrn.get(m)); const pv = ms[i + 1] ? f(C.souhrn.get(ms[i + 1])) : null;
+          return `<td class="r"><span class="num">${fmt0.format(Math.round(v))}</span>${pv ? `<br><span class="small ${znam(v - pv)}">${proc(v / pv - 1)}</span>` : ""}</td>`;
+        }).join("")}</tr>`;
+    };
+    $("#tabSouhrn").innerHTML = `<table class="souhrn"><thead><tr><th></th><th class="r mom">Změna MoM<br><span class="small">${ms[1] ? `${mKratce(ms[1])} → ${mKratce(ms[0])}` : ""}</span></th>${ms.map((m) => `<th class="r">${mKratce(m)}</th>`).join("")}</tr></thead><tbody>
       ${["penzijka", "investice", "nemovitosti", "hotovost"].map((k) => radek(KATEGORIE[k].nazev, (x) => x.kat[k] || 0)).join("")}
       ${s.kat.hypoteky ? radek("− Hypotéky", (x) => x.kat.hypoteky || 0) : ""}
       ${radek("Celkem", (x) => x.celkem, true)}
