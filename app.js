@@ -628,54 +628,205 @@
     return r;
   }
 
+  // stav zobrazení cash flow (pamatuje si prohlížeč, ne databáze)
+  const cfUi = (() => { try { return JSON.parse(localStorage.getItem("fin-cf-ui")) || {}; } catch (e) { return {}; } })();
+  const cfUiUloz = () => { try { localStorage.setItem("fin-cf-ui", JSON.stringify(cfUi)); } catch (e) {} };
+
   function strCashflow(app) {
-    const mesice = cfMesice();
-    const v = cfVypocet(mesice);
+    const vse = cfMesice();
+    const v = cfVypocet(vse);
     const dnes = mDnes();
+    const odM = mPosun(dnes, -6);
+    const starsich = vse.filter((m) => m < odM).length;
+    const mesice = cfUi.starsi ? vse : vse.filter((m) => m >= odM);
+    // hranice: do posledního uzavřeného měsíce je skutečnost, dál výhled
+    const hranice = posledniUzavreny() || mPosun(dnes, -1);
+    const jeVyhled = (m) => m > hranice;
+    const nSkut = mesice.filter((m) => !jeVyhled(m)).length, nVyhl = mesice.length - nSkut;
+
+    // nejhorší / nejlepší přírůstek a nejnižší plánovaná hotovost ve výhledu
+    const prir = mesice.map((m) => v.prirustek[m]);
+    const maxAbs = Math.max(1, ...prir.map(Math.abs));
+    // nejhorší a nejlepší měsíc zvlášť ve skutečnosti a ve výhledu
+    const vyhl = mesice.filter(jeVyhled);
+    const extremy = (ms) => ms.length ? [ms.reduce((a, m) => (v.prirustek[m] < v.prirustek[a] ? m : a)), ms.reduce((a, m) => (v.prirustek[m] > v.prirustek[a] ? m : a))] : [];
+    const [hS, lS] = extremy(mesice.filter((m) => !jeVyhled(m))), [hV, lV] = extremy(vyhl);
+    const nejhorsi = new Set([hS, hV]), nejlepsi = new Set([lS, lV]);
+    const minPlan = vyhl.length ? vyhl.reduce((a, m) => (v.plan[m] < v.plan[a] ? m : a), vyhl[0]) : null;
+    const maxAbsDiff = Math.max(1, ...mesice.map((m) => Math.abs(v.diff[m] || 0)));
+
+    const tridy = (m) => [jeVyhled(m) ? "fc" : "", m === dnes ? "now" : "", m === mPosun(hranice, 1) ? "hr" : ""].join(" ");
+    const tint = (val, max) => {
+      if (!val) return "";
+      const a = Math.round(8 + 32 * Math.min(1, Math.abs(val) / max));
+      return `style="background:color-mix(in srgb, var(${val > 0 ? "--good" : "--bad"}) ${a}%, transparent)"`;
+    };
     const bunka = (rid, m) => {
       const c = D.cf.get(sk(rid, m));
-      return `<td class="cell ${m === dnes ? "now" : ""} ${c?.vyraz ? "vyr" : ""}" data-r="${esc(rid)}" data-m="${m}" title="${esc([c?.vyraz ? "= " + c.vyraz : "", c?.poznamka || ""].filter(Boolean).join("\n"))}">${c?.castka != null ? fmt0.format(Math.round(c.castka)) : c?.poznamka ? "…" : ""}</td>`;
+      return `<td class="cell ${tridy(m)} ${c?.vyraz ? "vyr" : ""}" data-r="${esc(rid)}" data-m="${m}" title="${esc([c?.vyraz ? "= " + c.vyraz : "", c?.poznamka || ""].filter(Boolean).join("\n"))}">${c?.castka != null ? fmt0.format(Math.round(c.castka)) : c?.poznamka ? "…" : ""}</td>`;
     };
-    const sekce = (s, nazev) => `<tr class="grp"><td class="lbl">${nazev}</td><td colspan="${mesice.length}"></td></tr>` +
-      D.cfRadky.filter((x) => x.sekce === s && x.aktivni).map((x) => `<tr><td class="lbl">${esc(x.nazev)} <button class="mini" data-fill="${esc(x.id)}" title="Zkopírovat poslední vyplněnou hodnotu do dalších měsíců">→</button></td>${mesice.map((m) => bunka(x.id, m)).join("")}</tr>`).join("");
-    const calc = (nazev, obj, cls) => `<tr class="calc"><td class="lbl">${nazev}</td>${mesice.map((m) => `<td class="r num ${m === dnes ? "now" : ""} ${cls ? cls(obj[m]) : ""}">${obj[m] == null ? "" : fmt0.format(Math.round(obj[m]))}</td>`).join("")}</tr>`;
+    const sekce = (s, nazev, soucty) => {
+      const zav = !(cfUi.otevreno || {})[s];
+      const radky = D.cfRadky.filter((x) => x.sekce === s && x.aktivni);
+      return `<tr class="grp sec" data-sekce="${s}"><td class="lbl"><button class="tog" aria-expanded="${!zav}">${zav ? "▸" : "▾"} ${nazev} <span class="muted small">(${radky.length})</span></button></td>
+          ${mesice.map((m) => `<td class="r num ${tridy(m)}">${fmt0.format(Math.round(soucty[m]))}</td>`).join("")}</tr>` +
+        radky.map((x) => `<tr class="det" data-sekce="${s}" ${zav ? "hidden" : ""}><td class="lbl">${esc(x.nazev)} <button class="mini" data-fill="${esc(x.id)}" title="Zkopírovat poslední vyplněnou hodnotu do dalších měsíců">→</button></td>${mesice.map((m) => bunka(x.id, m)).join("")}</tr>`).join("");
+    };
+    const calc = (nazev, f, extra) => `<tr class="calc"><td class="lbl">${nazev}</td>${mesice.map((m) => f(m)).join("")}</tr>`;
+    const td = (m, val, styl, znacka) => `<td class="r num ${tridy(m)}" ${styl || ""}>${val == null ? "" : fmt0.format(Math.round(val))}${znacka ? `<div class="mark">${znacka}</div>` : ""}</td>`;
 
     app.innerHTML = `<h2>Cash flow</h2>
-      <p class="muted">Plán příjmů a výdajů po měsících. <b>Plán</b> = skutečnost minulého měsíce + přírůstek. <b>Skutečnost</b> se doplní sama z hotovosti po uzávěrce měsíce.
-      Klikni do buňky a zadej částku nebo výpočet; šipka → u řádku zkopíruje hodnotu do dalších měsíců.</p>
-      <div class="toolbar"><button id="cfNovy">+ Nový řádek</button><div class="grow"></div>
-        <label class="small"><input type="checkbox" id="cfVse"> celá historie od 2023</label></div>
-      <div class="card scroll" id="cfBox"><table class="cf"><thead><tr><th class="lbl"></th>${mesice.map((m) => `<th class="r ${m === dnes ? "now" : ""}" data-col="${m}">${mKratce(m)}</th>`).join("")}</tr></thead><tbody>
-        ${sekce("prijem", "Příjmy")}
-        ${calc("Příjmy celkem", v.prijmy)}
-        ${sekce("naklad", "Náklady")}
-        ${calc("Náklady celkem", v.naklady)}
+      <p class="muted">Plán příjmů a výdajů po měsících. <b>Plán</b> = skutečnost minulého měsíce + přírůstek, <b>skutečnost</b> se doplní sama po uzávěrce měsíce.
+      Klikni do buňky a zadej částku nebo výpočet. Šipka → u řádku zkopíruje hodnotu do dalších měsíců.</p>
+      <div class="toolbar">
+        ${starsich ? `<button id="cfStarsi">${cfUi.starsi ? "◂ Skrýt starší měsíce" : `▸ Zobrazit starší měsíce (${starsich})`}</button>` : ""}
+        <button id="cfRozbal">${Object.values(cfUi.otevreno || {}).some(Boolean) ? "Sbalit sekce" : "Rozbalit sekce"}</button>
+        <div class="grow"></div>
+        <span class="legend" style="margin:0"><span><i class="dot" style="background:color-mix(in srgb,var(--good) 35%,transparent)"></i>lepší</span>
+        <span><i class="dot" style="background:color-mix(in srgb,var(--bad) 35%,transparent)"></i>horší</span>
+        <span><i class="dot fcdot"></i>výhled</span></span>
+        <button id="cfNovy">+ Nový řádek</button>
+      </div>
+      <div class="card scroll" id="cfBox"><table class="cf"><thead>
+        <tr class="obdobi"><th class="lbl"></th>
+          ${nSkut ? `<th colspan="${nSkut}" class="per skut">Skutečnost · do ${mKratce(hranice)}</th>` : ""}
+          ${nVyhl ? `<th colspan="${nVyhl}" class="per fc hr">Výhled →</th>` : ""}</tr>
+        <tr><th class="lbl"></th>${mesice.map((m) => `<th class="r ${tridy(m)}">${mKratce(m)}${m === dnes ? '<div class="mark">dnes</div>' : ""}</th>`).join("")}</tr></thead><tbody>
+        ${sekce("prijem", "Příjmy", v.prijmy)}
+        ${sekce("naklad", "Náklady", v.naklady)}
         <tr class="grp"><td class="lbl">Výsledek</td><td colspan="${mesice.length}"></td></tr>
-        ${calc("Přírůstek / úbytek", v.prirustek, znam)}
-        ${calc("Cash flow – plán", v.plan)}
-        ${calc("Skutečnost", v.skut)}
-        ${calc("Rozdíl", v.diff, znam)}
-      </tbody></table></div>`;
+        ${calc("Přírůstek / úbytek", (m) => td(m, v.prirustek[m], tint(v.prirustek[m], maxAbs),
+            nejhorsi.has(m) && v.prirustek[m] < 0 ? "▼ nejhorší" : nejlepsi.has(m) && v.prirustek[m] > 0 ? "▲ nejlepší" : ""))}
+        ${calc("Cash flow – plán", (m) => td(m, v.plan[m], m === minPlan ? 'style="outline:2px solid var(--bad);outline-offset:-2px"' : "", m === minPlan ? "▼ minimum" : ""))}
+        ${calc("Skutečnost", (m) => td(m, v.skut[m]))}
+        ${calc("Rozdíl proti plánu", (m) => td(m, v.diff[m], tint(v.diff[m], maxAbsDiff)))}
+      </tbody></table></div>
 
-    // výchozí pohled: od 6 měsíců zpět
+      <h3>Příjmy, náklady a přírůstek</h3>
+      <div class="card chart" id="cfG1"></div>
+      <h3>Hotovost: plán a skutečnost</h3>
+      <div class="card chart" id="cfG2"></div>`;
+
+    // výchozí pohled: posunout na začátek zobrazených měsíců (u celé historie na dnešek)
     const box = $("#cfBox");
-    const odM = mPosun(dnes, -6);
-    const posun = () => { const th = box.querySelector(`[data-col="${odM}"]`); if (th) box.scrollLeft = th.offsetLeft - box.querySelector("th.lbl").offsetWidth; };
-    posun();
-    $("#cfVse").onchange = (e) => { if (e.target.checked) box.scrollLeft = 0; else posun(); };
+    const th = box.querySelector("thead tr:last-child th.now");
+    if (cfUi.starsi && th) box.scrollLeft = th.offsetLeft - box.querySelector("th.lbl").offsetWidth - 200;
+
+    grafCfSloupce($("#cfG1"), mesice, v, jeVyhled);
+    grafCfLinie($("#cfG2"), mesice, v, jeVyhled);
 
     box.addEventListener("click", (e) => {
-      const td = e.target.closest("td.cell");
-      if (td && !td.querySelector("input")) editBunku(td);
+      const tg = e.target.closest(".tog");
+      if (tg) {
+        const s = tg.closest("tr").dataset.sekce;
+        cfUi.otevreno = { ...(cfUi.otevreno || {}), [s]: !(cfUi.otevreno || {})[s] }; cfUiUloz();
+        const sl = box.scrollLeft; render(); $("#cfBox").scrollLeft = sl; return;
+      }
+      const cell = e.target.closest("td.cell");
+      if (cell && !cell.querySelector("input")) editBunku(cell);
       const f = e.target.closest("[data-fill]");
-      if (f) vyplnDoprava(f.dataset.fill, mesice);
+      if (f) vyplnDoprava(f.dataset.fill, vse);
     });
+    if (starsich) $("#cfStarsi").onclick = () => { cfUi.starsi = !cfUi.starsi; cfUiUloz(); render(); };
+    $("#cfRozbal").onclick = () => {
+      const otevrit = !Object.values(cfUi.otevreno || {}).some(Boolean);
+      cfUi.otevreno = { prijem: otevrit, naklad: otevrit }; cfUiUloz(); render();
+    };
     $("#cfNovy").onclick = async () => {
       const nazev = prompt("Název řádku (např. Auto, Dovolená):"); if (!nazev) return;
       const prijem = confirm("Je to příjem? (OK = příjem, Zrušit = náklad)");
       const row = { id: "cf-" + slug(nazev), sekce: prijem ? "prijem" : "naklad", nazev, poradi: D.cfRadky.reduce((a, x) => Math.max(a, x.poradi), 0) + 10, aktivni: true };
-      try { await upsert("fin_cf_radky", [row], "id"); await nacti(); render(); } catch (err) { toast(err.message, true); }
+      try {
+        await upsert("fin_cf_radky", [row], "id");
+        cfUi.otevreno = { ...(cfUi.otevreno || {}), [row.sekce]: true }; cfUiUloz();
+        await nacti(); render();
+      } catch (err) { toast(err.message, true); }
     };
+  }
+
+  // společná kostra grafů cash flow: osa, šrafovaný výhled, popisky měsíců, hover
+  function cfKostra(box, mesice, jeVyhled, min, max, legenda, tipHtml, kresli) {
+    const W = 760, H = 260, L = 60, B = 26, T = 18, R = 8;
+    const rozsah = osaY(Math.max(Math.abs(min), Math.abs(max)));
+    const krok = rozsah[1] - rozsah[0];
+    const lo = Math.floor(Math.min(0, min) / krok) * krok + (min > 0 ? Math.floor(min / krok) * krok : 0), hi = Math.ceil(max / krok) * krok || krok;
+    const ticks = []; for (let t = lo; t <= hi + krok / 2; t += krok) ticks.push(t);
+    const y = (val) => T + (H - T - B) * (1 - (val - lo) / (hi - lo));
+    const sirka = (W - L - R) / mesice.length;
+    const xc = (i) => L + sirka * (i + 0.5);
+    const iV = mesice.findIndex(jeVyhled);
+    const jedn = hi - lo >= 5e6 ? [1e6, " M"] : [1e3, " tis."];
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img">
+      <defs><pattern id="sraf" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="var(--line)" stroke-width="2"/></pattern></defs>`;
+    if (iV >= 0) svg += `<rect x="${L + sirka * iV}" y="${T - 14}" width="${W - R - L - sirka * iV}" height="${H - B - T + 14}" fill="url(#sraf)" opacity=".7"/>
+      <line x1="${L + sirka * iV}" x2="${L + sirka * iV}" y1="${T - 14}" y2="${H - B}" stroke="var(--muted)" stroke-dasharray="4 3"/>
+      <g class="axis"><text x="${L + sirka * iV + 6}" y="${T - 4}">výhled →</text></g>`;
+    svg += `<g class="grid">${ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" ${t === 0 ? 'stroke="var(--muted)"' : ""}/>`).join("")}</g>`;
+    svg += `<g class="axis">${ticks.map((t) => `<text x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${fmt0.format(t / jedn[0])}${jedn[1]}</text>`).join("")}</g>`;
+    const kazdy = Math.ceil(mesice.length / 14);
+    svg += `<g class="axis">${mesice.map((m, i) => (i % kazdy ? "" : `<text x="${xc(i)}" y="${H - 8}" text-anchor="middle">${mKratce(m)}</text>`)).join("")}</g>`;
+    svg += kresli({ y, xc, sirka });
+    svg += `<line class="cross" y1="${T}" y2="${H - B}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/>`;
+    svg += mesice.map((m, i) => `<rect class="hit" data-i="${i}" x="${L + sirka * i}" y="${T}" width="${sirka}" height="${H - T - B}" fill="transparent"/>`).join("");
+    svg += "</svg>";
+    box.innerHTML = `<div class="legend">${legenda}</div>${svg}`;
+    const cross = box.querySelector(".cross");
+    box.querySelectorAll(".hit").forEach((el) => {
+      el.addEventListener("mousemove", (ev) => {
+        const i = +el.dataset.i;
+        cross.setAttribute("x1", xc(i)); cross.setAttribute("x2", xc(i)); cross.style.display = "";
+        ukazTip(ev, `<b>${mNazev(mesice[i])}${jeVyhled(mesice[i]) ? " · výhled" : ""}</b>` + tipHtml(mesice[i]), box);
+      });
+      el.addEventListener("mouseleave", () => { skryjTip(); cross.style.display = "none"; });
+    });
+  }
+
+  const tipRadek = (barva, nazev, val, cara) => `<div class="row"><span><i class="dot" style="background:${barva}${cara ? ";height:3px;border-radius:0" : ""}"></i> ${nazev}</span><span class="num">${val == null ? "–" : kc(val)}</span></div>`;
+
+  function grafCfSloupce(box, mesice, v, jeVyhled) {
+    const hodn = mesice.flatMap((m) => [v.prijmy[m], v.naklady[m], v.prirustek[m]]);
+    cfKostra(box, mesice, jeVyhled, Math.min(0, ...hodn), Math.max(...hodn),
+      `<span><i class="dot" style="background:var(--c-prijmy)"></i>Příjmy</span><span><i class="dot" style="background:var(--c-naklady)"></i>Náklady</span>
+       <span><i class="dot" style="background:var(--text);height:3px;border-radius:0"></i>Přírůstek / úbytek</span>`,
+      (m) => tipRadek("var(--c-prijmy)", "Příjmy", v.prijmy[m]) + tipRadek("var(--c-naklady)", "Náklady", v.naklady[m]) +
+        `<div class="row" style="margin-top:4px;font-weight:600"><span>Přírůstek</span><span class="num ${znam(v.prirustek[m])}">${plus(v.prirustek[m])} Kč</span></div>`,
+      ({ y, xc, sirka }) => {
+        const bw = Math.max(2, Math.min(16, sirka * 0.32));
+        const sloupec = (x, val, barva, fc) => {
+          if (!val) return "";
+          const y0 = y(0), y1 = y(val), h = Math.abs(y0 - y1), top = Math.min(y0, y1);
+          const r = Math.min(4, h / 2, bw / 2);
+          const d = val > 0 ? `M${x},${y0} V${top + r} q0,-${r} ${r},-${r} H${x + bw - r} q${r},0 ${r},${r} V${y0} Z`
+                            : `M${x},${y0} V${top + h - r} q0,${r} ${r},${r} H${x + bw - r} q${r},0 ${r},-${r} V${y0} Z`;
+          return `<path d="${d}" fill="${barva}" ${fc ? 'fill-opacity=".55"' : ""}/>`;
+        };
+        let s = mesice.map((m, i) => sloupec(xc(i) - bw - 1, v.prijmy[m], "var(--c-prijmy)", jeVyhled(m)) + sloupec(xc(i) + 1, v.naklady[m], "var(--c-naklady)", jeVyhled(m))).join("");
+        s += `<polyline points="${mesice.map((m, i) => `${xc(i).toFixed(1)},${y(v.prirustek[m]).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round"/>`;
+        s += mesice.map((m, i) => `<circle cx="${xc(i)}" cy="${y(v.prirustek[m])}" r="3.5" fill="${v.prirustek[m] < 0 ? "var(--bad)" : "var(--good)"}" stroke="var(--tile)" stroke-width="1.5"/>`).join("");
+        return s;
+      });
+  }
+
+  function grafCfLinie(box, mesice, v, jeVyhled) {
+    const hodn = mesice.flatMap((m) => [v.plan[m], v.skut[m]]).filter((x) => x != null);
+    const maxV = Math.max(...hodn);
+    const planVyhl = mesice.filter(jeVyhled).map((m) => v.plan[m]);
+    const minV = planVyhl.length ? Math.min(...planVyhl) : null;
+    cfKostra(box, mesice, jeVyhled, Math.min(...hodn) * 0.85, maxV,
+      `<span><i class="dot" style="background:var(--c-plan);height:3px;border-radius:0"></i>Plán</span><span><i class="dot" style="background:var(--c-hotovost);height:3px;border-radius:0"></i>Skutečnost</span>
+       ${minV != null ? `<span class="small">nejnižší plánovaná hotovost: <b class="num">${kc(minV)}</b></span>` : ""}`,
+      (m) => tipRadek("var(--c-plan)", "Plán", v.plan[m], true) + tipRadek("var(--c-hotovost)", "Skutečnost", v.skut[m], true) +
+        (v.diff[m] != null ? `<div class="row" style="margin-top:4px"><span>Rozdíl</span><span class="num ${znam(v.diff[m])}">${plus(v.diff[m])} Kč</span></div>` : ""),
+      ({ y, xc }) => {
+        const cara = (f, barva, dash) => {
+          const body = mesice.map((m, i) => (f(m) == null ? null : `${xc(i).toFixed(1)},${y(f(m)).toFixed(1)}`)).filter(Boolean);
+          return body.length ? `<polyline points="${body.join(" ")}" fill="none" stroke="${barva}" stroke-width="2" stroke-linejoin="round" ${dash ? 'stroke-dasharray="5 4"' : ""}/>` : "";
+        };
+        const iMin = minV == null ? -1 : mesice.findIndex((m) => v.plan[m] === minV && jeVyhled(m));
+        return cara((m) => v.plan[m], "var(--c-plan)", true) + cara((m) => v.skut[m], "var(--c-hotovost)") +
+          mesice.map((m, i) => (v.skut[m] != null ? `<circle cx="${xc(i)}" cy="${y(v.skut[m])}" r="3" fill="var(--c-hotovost)" stroke="var(--tile)" stroke-width="1.5"/>` : "")).join("") +
+          (iMin >= 0 ? `<circle cx="${xc(iMin)}" cy="${y(minV)}" r="6" fill="none" stroke="var(--bad)" stroke-width="2"/><g class="axis"><text x="${xc(iMin)}" y="${y(minV) + 20}" text-anchor="middle" style="fill:var(--bad)">▼ minimum</text></g>` : "");
+      });
   }
 
   function editBunku(td) {
